@@ -17,18 +17,20 @@ fn blit(buffer: &mut [u32; WIDTH * HEIGHT]) {
 }
 
 fn main() {
-    let mut buffer = [0u32; WIDTH * HEIGHT];
-    let mut planet = PointWeight::new(dvec2(0.01, AU), EARTH_MASS, 0x00ff00ff, 10.);
+    let mut buffer: [u32; 786432] = [0u32; WIDTH * HEIGHT];
 
-    planet.velocity = dvec2(107_208.78, 0.);
+    let mut planet = PointWeight::new(dvec2(0.01, AU), EARTH_MASS, 0x00ff00ff, 5.);
+    planet.velocity = dvec2(107_208.78 * 10., 0.);
 
-    let mut sun = PointWeight::new(dvec2(-AU * 2., -AU), EARTH_MASS * 333_000., 0xffffffff, 30.);
-    sun.velocity = dvec2(107_2008.78, 0.);
+    let mut sun = PointWeight::new(dvec2(0., 0.), EARTH_MASS * 333_000., 0xffffffff, 5.);
+    sun.velocity = dvec2(0., 0.);
 
-    let sun2 = PointWeight::new(dvec2(AU, 2. * AU), EARTH_MASS * 333_000., 0xffffffff, 30.);
+    let mut kepler47a = PointWeight::new(dvec2(0., 0.), EARTH_MASS * 333_000. * 1.04, 0xffffffff, 5.);
+    let mut kepler47b = PointWeight::new(dvec2(0., AU * 0.2877), EARTH_MASS * 2.07, 0x00ff00ff, 5.);
+    kepler47b.velocity = dvec2(203892. * 10., 0.);
 
     let mut world = World {
-        objects: vec![planet, sun, sun2],
+        objects: vec![kepler47a, kepler47b],
     };
 
     let mut window = Window::new(
@@ -45,16 +47,18 @@ fn main() {
     .expect("Unable to create the window");
 
     window.set_target_fps(120);
-
     let press_esc_text = Text::new(WIDTH, HEIGHT, 2);
-    let mut focused_object: Option<usize> = None;
-    let mut running = true;
-    let mut menu = false;
+
     let ui = ui::UserInterface::new();
-    let mut factor = 100.;
+    let mut menu = false;
+    let mut factor: f64 = 100.;
     let mut center = (0., 0.);
-    let mut showing_vectors = false;
+    let mut running = true;
+    let mut dragging = false;
+    let mut drag_start = dvec2(0., 0.);
     let mut showing_field = false;
+    let mut focused_object: Option<usize> = None;
+    let mut showing_vectors = false;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let new_size = window.get_size();
@@ -68,8 +72,6 @@ fn main() {
             showing_vectors = !showing_vectors;
         } else if window.is_key_pressed(Key::RightBracket, minifb::KeyRepeat::No) {
             showing_field = !showing_field;
-        } else if window.is_key_pressed(Key::Minus, minifb::KeyRepeat::No) && running {
-            factor *= 0.1;
         } else if window.is_key_pressed(Key::Left, minifb::KeyRepeat::Yes) && running {
             center.0 += 10.;
         } else if window.is_key_pressed(Key::Right, minifb::KeyRepeat::Yes) && running {
@@ -80,6 +82,10 @@ fn main() {
             center.1 -= 10.;
         } else if window.is_key_pressed(Key::Equal, minifb::KeyRepeat::No) && running {
             factor *= 10.;
+            // factor = factor.round();
+        } else if window.is_key_pressed(Key::Minus, minifb::KeyRepeat::No) && running {
+            factor *= 0.1;
+            // factor = factor.round();
         } else if window.is_key_pressed(Key::Delete, minifb::KeyRepeat::No) && running {
             world.objects.clear();
             focused_object = None;
@@ -116,10 +122,26 @@ fn main() {
             focused_object = None;
         }
 
-        if window.is_key_pressed(Key::Space, minifb::KeyRepeat::No) {
+        if window.is_key_pressed(Key::Space, minifb::KeyRepeat::No) && !dragging {
+            drag_start = dvec2(x.into(), y.into());
+            dragging = true;
+        }
+
+        if dragging {
+            dda_line(
+                buffer.as_mut(),
+                drag_start.x as f64,
+                drag_start.y as f64,
+                x as f64,
+                y as f64,
+                0x60606060,
+            );
+        }
+
+        if window.is_key_released(Key::Space) && dragging {
             // if let Some((x, y)) = window.get_mouse_pos(MouseMode::Discard) {
-            let new_x = ((x - CENTER.x as f32) as f64 - center.0) * (AU / factor);
-            let new_y = ((y - CENTER.y as f32) as f64 - center.1) * (AU / factor);
+            let new_x = ((drag_start.x - CENTER.x) - center.0) * (AU / factor);
+            let new_y = ((drag_start.y - CENTER.y) - center.1) * (AU / factor);
 
             let mut mass_factor = 1.;
 
@@ -141,25 +163,26 @@ fn main() {
                 mass_factor = 2.;
             }
 
-            
+            let stop = dvec2(x.into(), y.into());
 
-            let new_planet = PointWeight::new(
+            // println!("{}", 1. / factor);
+
+            let new_planet = PointWeight::new_with_vel(
                 dvec2(new_x, new_y),
+                ((drag_start - stop) * 10e3).into(),
                 EARTH_MASS * 100_000. * mass_factor,
-                0xfafafafa,
-                5. * mass_factor,
+                0xf0f0f0f0,
+                5. * (mass_factor.powf(0.8)),
             );
 
             world.objects.push(new_planet);
+            dragging = false;
         }
 
         if menu {
             ui.draw(buffer.as_mut(), 0., 0., center);
         }
 
-        if running {
-            world.update()
-        }
         world.draw(
             buffer.as_mut(),
             factor as f32,
@@ -175,23 +198,38 @@ fn main() {
                 &format!(
                     "Point {}: {} km/h",
                     id,
-                    (world.objects[id - world.get_id_offset()].velocity.x.abs() + world.objects[id - world.get_id_offset()].velocity.y.abs())
-                        .floor() as i64
+                    (world.objects[id - world.get_id_offset()].velocity.x.abs()
+                        + world.objects[id - world.get_id_offset()].velocity.y.abs())
+                    .floor() as i64
                 ),
             );
 
             press_esc_text.draw(
                 &mut buffer,
                 (20, HEIGHT - 25),
-                &format!("   mass: {:e} kg", world.objects[id - world.get_id_offset()].mass ),
+                &format!(
+                    "   mass: {:e} kg",
+                    world.objects[id - world.get_id_offset()].mass
+                ),
             );
         }
 
-        press_esc_text.draw(
-            &mut buffer,
-            (0, 5),
-            &format!("100px = {}km", 100. * (1.496e8 / factor as f64)),
-        );
+        if factor.round() == 100. {
+            press_esc_text.draw(
+                &mut buffer,
+                (0, 5),
+                &format!(
+                    "100px = {}km *AU*",
+                    100. * (1.496e8 / factor as f64).round()
+                ),
+            );
+        } else {
+            press_esc_text.draw(
+                &mut buffer,
+                (0, 5),
+                &format!("100px = {}km", 100. * (1.496e8 / factor as f64).round()),
+            );
+        }
 
         if running {
             //crosshair
@@ -211,6 +249,8 @@ fn main() {
                 CENTER.y,
                 0x60606060,
             );
+
+            world.update();
         }
 
         window

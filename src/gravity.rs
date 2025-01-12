@@ -3,7 +3,7 @@ use glam::{dvec2, DVec2};
 use crate::{
     helper::{plot_arc, HEIGHT, WIDTH},
     ui::dda_line,
-    Drawable, AU,
+    Drawable,
 };
 
 const TIME_DELAY: f64 = 0.5;
@@ -25,11 +25,14 @@ impl World {
         for obj in self.objects.iter_mut() {
             let mut net_force = dvec2(0., 0.);
 
+            // print!("p{}: ", obj.id);
+
             for secondary in secondaries.clone().into_iter() {
                 // Calculate the force of gravity from all other objects
                 if secondary.id == obj.id {
                     continue;
                 } // If it's not you.
+                // print!("{}, ", secondary.id);
 
                 let grav = obj.gravity(&secondary);
 
@@ -38,6 +41,8 @@ impl World {
                 net_force += directional_vector;
             }
             obj.force = net_force;
+            // print!("\n");
+
         }
 
         for obj in self.objects.iter_mut() {
@@ -85,7 +90,15 @@ impl Drawable for World {
         }
 
         if vectors % 5. == 0. {
-            let mut point = PointWeight::new(dvec2(0., 0.), 50., 0x00000000, 0.);
+            let mut point = PointWeight {
+                id: 0,
+                velocity: dvec2(0., 0.),
+                force: dvec2(0., 0.),
+                position: dvec2(0., 0.),
+                mass: 50.,
+                radius: 0.,
+                color: 0x00000000,
+            };
 
             let x_divs = 30;
             let y_divs = 20;
@@ -159,7 +172,7 @@ fn get_current_id() -> usize {
     COUNTER.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-pub fn generate_semi_random_u32(mut id: usize) -> u32 {
+pub fn generate_semi_random_u32(id: usize) -> u32 {
     // Constants for the linear congruential generator
     let mut id = id as u32;
     const A: u32 = 1664525;
@@ -186,6 +199,24 @@ impl PointWeight {
         PointWeight {
             id: id,
             velocity: dvec2(0., 0.),
+            force: dvec2(0., 0.),
+            position,
+            mass,
+            radius,
+            color,
+        }
+    }
+
+    pub fn new_with_vel(position: DVec2, vel: DVec2, mass: f64, mut color: u32, radius: f64) -> PointWeight {
+        let id = id();
+
+        if color == 0xfafafafa {
+            color = generate_semi_random_u32(id);
+        }
+
+        PointWeight {
+            id: id,
+            velocity: vel,
             force: dvec2(0., 0.),
             position,
             mass,

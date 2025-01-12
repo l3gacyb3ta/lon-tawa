@@ -1,5 +1,5 @@
-pub const WIDTH: usize = 1512;
-pub const HEIGHT: usize = 720;
+pub const WIDTH: usize = 1024;
+pub const HEIGHT: usize = 768;
 pub const PITCH: usize = 1;
 
 #[inline(always)]
