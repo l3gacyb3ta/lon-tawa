@@ -4,7 +4,7 @@ mod ui;
 
 use crate::helper::{HEIGHT, WIDTH};
 use glam::{dvec2, DVec2};
-use gravity::{PointWeight, World};
+use gravity::{Boundary, Node, Particle, PointWeight, World};
 use minifb::{Key, MouseButton, MouseMode, Window, WindowOptions};
 use ui::dda_line;
 
@@ -16,6 +16,8 @@ fn blit(buffer: &mut [u32; WIDTH * HEIGHT]) {
     buffer.fill(0x00000000);
 }
 
+use rand::prelude::*;
+
 fn main() {
     let mut buffer: [u32; 786432] = [0u32; WIDTH * HEIGHT];
 
@@ -25,13 +27,42 @@ fn main() {
     let mut sun = PointWeight::new(dvec2(0., 0.), EARTH_MASS * 333_000., 0xffffffff, 5.);
     sun.velocity = dvec2(0., 0.);
 
-    let mut kepler47a = PointWeight::new(dvec2(0., 0.), EARTH_MASS * 333_000. * 1.04, 0xffffffff, 5.);
-    let mut kepler47b = PointWeight::new(dvec2(0., AU * 0.2877), EARTH_MASS * 2.07, 0x00ff00ff, 5.);
-    kepler47b.velocity = dvec2(203892. * 10., 0.);
+    // let mut kepler47a = PointWeight::new(dvec2(0., 0.), EARTH_MASS * 333_000. * 1.04, 0xffffffff, 5.);
+    // let mut kepler47b = PointWeight::new(dvec2(0., AU * 0.2877), EARTH_MASS * 2.07, 0x00ff00ff, 5.);
+    // kepler47b.velocity = dvec2(203892. * 10., 0.);
 
-    let mut world = World {
-        objects: vec![kepler47a, kepler47b],
-    };
+    // let mut objects = vec![];
+
+    let mut rng = rand::rng();
+
+
+
+    let mut particles = vec![
+        Particle { position: DVec2 { x: 0.01, y: 0.01 }, velocity: DVec2 { x: 0.01, y: 0.01 }, mass: (EARTH_MASS * 333_000. * 1.04) / 1000. }, // kepler47a
+        Particle { position: DVec2 { x: 0.01, y: AU * 0.2877 }, velocity: DVec2 { x: 203892. / 10., y: 0.1 }, mass: (EARTH_MASS * 2.07) / 1000. }, // kepler47b
+        // Particle { position: DVec2 { x: 30.0, y: 40.0 }, velocity: DVec2 { x: 0.5, y: -1.5 }, mass: 8.0 },
+    ];
+
+
+    for _ in 0..1000 {
+        particles.push(Particle { position: DVec2 { x: rng.random_range(-10..10) as f64 * AU + 0.1, y: rng.random_range(-1000..1000) as f64 * AU * 0.010 + 0.1 }, velocity: DVec2 { x: 0.01, y: 0.01 }, mass: (EARTH_MASS * 333_000. * rng.random_range(1..5) as f64) / 1000. }); // kepler47a
+    }
+
+    let mut boundary = Boundary { x: 0.0, y: 0.0, width: 100.0, height: 100.0 };
+
+    for particle in &particles {
+        boundary.expand_to_fit(&particle.position);
+    }
+
+    let mut root = Node::new(boundary);
+
+    
+    for particle in &particles {
+        root.insert(particle.clone());
+    }
+    
+    println!("{:?}", root.northeast);
+    let mut world = World { root };
 
     let mut window = Window::new(
         "Gravity Simulator",
@@ -87,7 +118,7 @@ fn main() {
             factor *= 0.1;
             // factor = factor.round();
         } else if window.is_key_pressed(Key::Delete, minifb::KeyRepeat::No) && running {
-            world.objects.clear();
+            // world.objects.clear();
             focused_object = None;
         }
 
@@ -100,27 +131,29 @@ fn main() {
 
         const CENTER: DVec2 = dvec2((WIDTH as f64) / 2., HEIGHT as f64 / 2.);
 
-        if window.get_mouse_down(MouseButton::Left) {
-            for obj in world.objects.clone() {
-                const AU_FACTOR: f64 = 1.496e8 / 100.;
-                let x_left = ((obj.position.x.floor() / AU_FACTOR) + CENTER.x - obj.radius
-                    + center.0) as f32;
-                let y_left = ((obj.position.y.floor() / AU_FACTOR) + CENTER.y - obj.radius
-                    + center.1) as f32;
-                let x_right =
-                    ((obj.position.x.floor() / AU_FACTOR) + CENTER.x + obj.radius + center.0)
-                        as f32;
-                let y_right =
-                    ((obj.position.y.floor() / AU_FACTOR) + CENTER.y + obj.radius + center.1)
-                        as f32;
+        // if window.get_mouse_down(MouseButton::Left) {
+        //     for obj in world.objects.clone() {
+        //         const AU_FACTOR: f64 = 1.496e8 / 100.;
+        //         let x_left = ((obj.position.x.floor() / AU_FACTOR) + CENTER.x - obj.radius
+        //             + center.0) as f32;
+        //         let y_left = ((obj.position.y.floor() / AU_FACTOR) + CENTER.y - obj.radius
+        //             + center.1) as f32;
+        //         let x_right =
+        //             ((obj.position.x.floor() / AU_FACTOR) + CENTER.x + obj.radius + center.0)
+        //                 as f32;
+        //         let y_right =
+        //             ((obj.position.y.floor() / AU_FACTOR) + CENTER.y + obj.radius + center.1)
+        //                 as f32;
 
-                if x_left <= x && x <= x_right && y_left <= y && y <= y_right {
-                    focused_object = Some(obj.id);
-                }
-            }
-        } else if window.get_mouse_down(MouseButton::Right) {
-            focused_object = None;
-        }
+        //         if x_left <= x && x <= x_right && y_left <= y && y <= y_right {
+        //             focused_object = Some(obj.id);
+        //         }
+        //     }
+        // } else if window.get_mouse_down(MouseButton::Right) {
+        //     focused_object = None;
+        // }
+
+
 
         if window.is_key_pressed(Key::Space, minifb::KeyRepeat::No) && !dragging {
             drag_start = dvec2(x.into(), y.into());
@@ -175,7 +208,7 @@ fn main() {
                 5. * (mass_factor.powf(0.8)),
             );
 
-            world.objects.push(new_planet);
+            // world.objects.push(new_planet);
             dragging = false;
         }
 
@@ -190,29 +223,29 @@ fn main() {
             center,
         );
 
-        if focused_object.is_some() {
-            let id = focused_object.unwrap();
-            press_esc_text.draw(
-                &mut buffer,
-                (20, HEIGHT - 40),
-                &format!(
-                    "Point {}: {} km/h",
-                    id,
-                    (world.objects[id - world.get_id_offset()].velocity.x.abs()
-                        + world.objects[id - world.get_id_offset()].velocity.y.abs())
-                    .floor() as i64
-                ),
-            );
+        // if focused_object.is_some() {
+        //     let id = focused_object.unwrap();
+        //     press_esc_text.draw(
+        //         &mut buffer,
+        //         (20, HEIGHT - 40),
+        //         &format!(
+        //             "Point {}: {} km/h",
+        //             id,
+        //             (world.objects[id - world.get_id_offset()].velocity.x.abs()
+        //                 + world.objects[id - world.get_id_offset()].velocity.y.abs())
+        //             .floor() as i64
+        //         ),
+        //     );
 
-            press_esc_text.draw(
-                &mut buffer,
-                (20, HEIGHT - 25),
-                &format!(
-                    "   mass: {:e} kg",
-                    world.objects[id - world.get_id_offset()].mass
-                ),
-            );
-        }
+        //     press_esc_text.draw(
+        //         &mut buffer,
+        //         (20, HEIGHT - 25),
+        //         &format!(
+        //             "   mass: {:e} kg",
+        //             world.objects[id - world.get_id_offset()].mass
+        //         ),
+        //     );
+        // }
 
         if factor.round() == 100. {
             press_esc_text.draw(
