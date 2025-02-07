@@ -4,12 +4,13 @@ mod ui;
 
 use crate::helper::{HEIGHT, WIDTH};
 use glam::{dvec2, DVec2};
-use gravity::{PointWeight, World};
+use gravity::{Particle, PointWeight, World};
 use minifb::{Key, MouseButton, MouseMode, Window, WindowOptions};
 use ui::dda_line;
 
 const AU: f64 = 1.496e+8;
 const EARTH_MASS: f64 = 5.972e+24;
+const CENTER: DVec2 = dvec2((WIDTH as f64) / 2., HEIGHT as f64 / 2.);
 
 #[inline(always)]
 fn blit(buffer: &mut [u32; WIDTH * HEIGHT]) {
@@ -17,20 +18,80 @@ fn blit(buffer: &mut [u32; WIDTH * HEIGHT]) {
 }
 
 fn main() {
+    const SIM_SPEED_FACTOR: f64 = 10.; // multiply km/h by this to have it work in the sim
     let mut buffer: [u32; 786432] = [0u32; WIDTH * HEIGHT];
 
-    let mut planet = PointWeight::new(dvec2(0.01, AU), EARTH_MASS, 0x00ff00ff, 5.);
-    planet.velocity = dvec2(107_208.78 * 10., 0.);
-
     let mut sun = PointWeight::new(dvec2(0., 0.), EARTH_MASS * 333_000., 0xffffffff, 5.);
-    sun.velocity = dvec2(0., 0.);
+    sun.velocity = dvec2(0.420, -0.420);
 
-    let mut kepler47a = PointWeight::new(dvec2(0., 0.), EARTH_MASS * 333_000. * 1.04, 0xffffffff, 5.);
-    let mut kepler47b = PointWeight::new(dvec2(0., AU * 0.2877), EARTH_MASS * 2.07, 0x00ff00ff, 5.);
-    kepler47b.velocity = dvec2(203892. * 10., 0.);
+    // Earth's orbital velocity around the Sun in m/s
+    // let mercury = PointWeight::new_with_vel(dvec2(0., -AU * 0.387), dvec2(47_000. * SIM_SPEED_FACTOR, 0.), EARTH_MASS * 0.055, 0xff0000ff, 5.0, 1);
+    // let venus = PointWeight::new_with_vel(dvec2(0., -AU * 0.723), dvec2(35_000. * SIM_SPEED_FACTOR, 0.), EARTH_MASS * 0.815, 0x00ff00ff, 5.0, 2);
+    let earth = PointWeight::new_with_vel(
+        dvec2(0., -AU),
+        dvec2(107_208. * SIM_SPEED_FACTOR, 0.),
+        EARTH_MASS,
+        0xff0000ff,
+        5.0,
+        1,
+    );
+    let mars = PointWeight::new_with_vel(
+        dvec2(0., -AU * 1.524),
+        dvec2(86_000. * SIM_SPEED_FACTOR, 0.),
+        EARTH_MASS * 0.11,
+        0x00ff00ff,
+        5.0,
+        2,
+    );
+    let jupiter = PointWeight::new_with_vel(
+        dvec2(0., -AU * 5.204),
+        dvec2(47_000. * SIM_SPEED_FACTOR, 0.),
+        EARTH_MASS * 317.8,
+        0x0000ffff,
+        5.0,
+        3,
+    );
+    let saturn = PointWeight::new_with_vel(
+        dvec2(0., -AU * 9.582),
+        dvec2(34_000. * SIM_SPEED_FACTOR, 0.),
+        EARTH_MASS * 95.2,
+        0xffff00ff,
+        5.0,
+        4,
+    );
+    let uranus = PointWeight::new_with_vel(
+        dvec2(0., -AU * 19.218),
+        dvec2(24_000. * SIM_SPEED_FACTOR, 0.),
+        EARTH_MASS * 14.5,
+        0x00ffffff,
+        5.0,
+        5,
+    );
+    let neptune = PointWeight::new_with_vel(
+        dvec2(0., -AU * 30.07),
+        dvec2(19_000. * SIM_SPEED_FACTOR, 0.),
+        EARTH_MASS * 17.1,
+        0xff00ffff,
+        5.0,
+        6,
+    );
+
+    // let mut kepler47a = PointWeight::new(dvec2(0., 0.), EARTH_MASS * 333_000. * 1.04, 0xffffffff, 5.);
+    // let mut kepler47b = PointWeight::new(dvec2(0., AU * 0.2877), EARTH_MASS * 2.07, 0x00ff00ff, 5.);
+    // kepler47b.velocity = dvec2(203892. * 10., 0.);
+    let mut particles = vec![];
+    for i in -1000..1000 {
+        particles.push(Particle::new_with_vel(
+            dvec2(AU, ((i as f64) / 1000.) * AU),
+            1.,
+            0x0a0a0a0a,
+            dvec2(1000. * SIM_SPEED_FACTOR, 0.),
+        ));
+    }
 
     let mut world = World {
-        objects: vec![kepler47a, kepler47b],
+        particles,
+        objects: vec![sun, earth, mars, jupiter, saturn, uranus, neptune],
     };
 
     let mut window = Window::new(
@@ -59,11 +120,22 @@ fn main() {
     let mut showing_field = false;
     let mut focused_object: Option<usize> = None;
     let mut showing_vectors = false;
+    let mut see_the_future = true;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
+        let speed_factor = (100. / factor).clamp(0.00001, 10.);
+
         let new_size = window.get_size();
 
         blit(&mut buffer);
+
+        if focused_object.is_some() {
+            let id = focused_object.unwrap();
+            let au_factor: f64 = 1.496e8 / factor;
+
+            center.0 = -(world.objects[id - world.get_id_offset()].position.x.floor() / au_factor);
+            center.1 = -(world.objects[id - world.get_id_offset()].position.y.floor() / au_factor);
+        }
 
         if window.is_key_pressed(Key::Tab, minifb::KeyRepeat::No) {
             running = !running;
@@ -72,6 +144,8 @@ fn main() {
             showing_vectors = !showing_vectors;
         } else if window.is_key_pressed(Key::RightBracket, minifb::KeyRepeat::No) {
             showing_field = !showing_field;
+        } else if window.is_key_pressed(Key::F, minifb::KeyRepeat::No) {
+            see_the_future = !see_the_future;
         } else if window.is_key_pressed(Key::Left, minifb::KeyRepeat::Yes) && running {
             center.0 += 10.;
         } else if window.is_key_pressed(Key::Right, minifb::KeyRepeat::Yes) && running {
@@ -80,10 +154,10 @@ fn main() {
             center.1 += 10.;
         } else if window.is_key_pressed(Key::Down, minifb::KeyRepeat::Yes) && running {
             center.1 -= 10.;
-        } else if window.is_key_pressed(Key::Equal, minifb::KeyRepeat::No) && running {
+        } else if window.is_key_pressed(Key::Equal, minifb::KeyRepeat::No) {
             factor *= 10.;
             // factor = factor.round();
-        } else if window.is_key_pressed(Key::Minus, minifb::KeyRepeat::No) && running {
+        } else if window.is_key_pressed(Key::Minus, minifb::KeyRepeat::No) {
             factor *= 0.1;
             // factor = factor.round();
         } else if window.is_key_pressed(Key::Delete, minifb::KeyRepeat::No) && running {
@@ -98,11 +172,9 @@ fn main() {
             (x, y) = mouse.unwrap()
         }
 
-        const CENTER: DVec2 = dvec2((WIDTH as f64) / 2., HEIGHT as f64 / 2.);
-
         if window.get_mouse_down(MouseButton::Left) {
             for obj in world.objects.clone() {
-                const AU_FACTOR: f64 = 1.496e8 / 100.;
+                let AU_FACTOR: f64 = 1.496e8 / factor;
                 let x_left = ((obj.position.x.floor() / AU_FACTOR) + CENTER.x - obj.radius
                     + center.0) as f32;
                 let y_left = ((obj.position.y.floor() / AU_FACTOR) + CENTER.y - obj.radius
@@ -136,51 +208,116 @@ fn main() {
                 y as f64,
                 0x60606060,
             );
+
+            if true {
+                let mut mass_factor = 1.;
+                get_mass_factor(&window, &mut mass_factor);
+
+                if !(mass_factor == -1.) {
+                    let stop = dvec2(x.into(), y.into());
+
+                    // println!("{}", 1. / factor);
+
+                    let new_x = ((drag_start.x - CENTER.x) - center.0) * (AU / factor);
+                    let new_y = ((drag_start.y - CENTER.y) - center.1) * (AU / factor);
+
+                    let new_planet = PointWeight::new_with_vel(
+                        dvec2(new_x, new_y),
+                        ((drag_start - stop) * 10e3).into(),
+                        EARTH_MASS * 100. * mass_factor,
+                        0xfafafafa,
+                        5. * (mass_factor.powf(0.8)),
+                        12062006,
+                    );
+
+                    draw_ahead(
+                        &mut buffer,
+                        10000,
+                        see_the_future,
+                        &world,
+                        factor,
+                        center,
+                        speed_factor,
+                        new_planet,
+                    );
+
+                    new_planet.draw(&mut buffer, factor as f32, 0., center);
+                }
+            }
         }
 
         if window.is_key_released(Key::Space) && dragging {
-            // if let Some((x, y)) = window.get_mouse_pos(MouseMode::Discard) {
-            let new_x = ((drag_start.x - CENTER.x) - center.0) * (AU / factor);
-            let new_y = ((drag_start.y - CENTER.y) - center.1) * (AU / factor);
+            let au_factor = AU / factor;
+            let new_pos = ((drag_start - CENTER) - DVec2::from(center)) * au_factor;
 
-            let mut mass_factor = 1.;
-
-            if window.is_key_down(Key::Key9) {
-                mass_factor = 9.;
-            } else if window.is_key_down(Key::Key8) {
-                mass_factor = 8.;
-            } else if window.is_key_down(Key::Key7) {
-                mass_factor = 7.;
-            } else if window.is_key_down(Key::Key6) {
-                mass_factor = 6.;
-            } else if window.is_key_down(Key::Key5) {
-                mass_factor = 5.;
-            } else if window.is_key_down(Key::Key4) {
-                mass_factor = 3.;
-            } else if window.is_key_down(Key::Key3) {
-                mass_factor = 3.;
-            } else if window.is_key_down(Key::Key2) {
-                mass_factor = 2.;
-            }
+            let new_x = ((drag_start.x - CENTER.x) - center.0) * au_factor;
+            let new_y = ((drag_start.y - CENTER.y) - center.1) * au_factor;
 
             let stop = dvec2(x.into(), y.into());
 
-            // println!("{}", 1. / factor);
+            if window.is_key_down(Key::LeftShift) {
+                let stop_pos = ((stop - CENTER) - DVec2::from(center)) * au_factor;
+                let mut particles = vec![];
 
-            let new_planet = PointWeight::new_with_vel(
-                dvec2(new_x, new_y),
-                ((drag_start - stop) * 10e3).into(),
-                EARTH_MASS * 100_000. * mass_factor,
-                0xf0f0f0f0,
-                5. * (mass_factor.powf(0.8)),
-            );
+                let start = new_pos;
+                let end = stop_pos;
 
-            world.objects.push(new_planet);
+                for i in 0..50000 {
+                    let i = (i as f64) / 50000.;
+                    let pos = start.lerp(end, i);
+
+                    particles.push(Particle::new(pos, 1., 0x000000000));
+                }
+
+                world.particles = particles;
+            } else {
+                let mut mass_factor = 1.;
+                get_mass_factor(&window, &mut mass_factor);
+
+                if mass_factor == -1. {
+                    let mut new_blackhole = PointWeight::new_with_vel(
+                        dvec2(new_x, new_y),
+                        dvec2(0.420, -0.420),
+                        EARTH_MASS * 100_000. * 15.,
+                        0xff00ffff,
+                        5.,
+                        0,
+                    );
+                    new_blackhole.force = dvec2(0.420, 0.420);
+                    world.objects.push(new_blackhole)
+                } else {
+                    let new_planet = PointWeight::new_with_vel(
+                        dvec2(new_x, new_y),
+                        ((drag_start - stop) * 10e3).into(),
+                        EARTH_MASS * 100. * mass_factor,
+                        0xfafafafa,
+                        5. * (mass_factor.powf(0.8)),
+                        0,
+                    );
+                    world.objects.push(new_planet);
+                }
+            }
             dragging = false;
         }
 
         if menu {
             ui.draw(buffer.as_mut(), 0., 0., center);
+        }
+
+        if see_the_future {
+            let futures = world.simulate_ahead_all(10000, speed_factor);
+            let mut i = 0;
+            for future_steps in futures {
+                just_draw_ahead(
+                    &mut buffer,
+                    future_steps,
+                    &world,
+                    factor,
+                    center,
+                    world.objects[i % 7].color,
+                );
+                i += 1;
+            }
         }
 
         world.draw(
@@ -191,7 +328,22 @@ fn main() {
         );
 
         if focused_object.is_some() {
+            // set screen center to the center of the focused object
             let id = focused_object.unwrap();
+
+            if !see_the_future {
+                draw_ahead(
+                    &mut buffer,
+                    5000,
+                    true,
+                    &world,
+                    factor,
+                    center,
+                    speed_factor,
+                    world.objects[id - world.get_id_offset()],
+                );
+            }
+
             press_esc_text.draw(
                 &mut buffer,
                 (20, HEIGHT - 40),
@@ -200,7 +352,7 @@ fn main() {
                     id,
                     (world.objects[id - world.get_id_offset()].velocity.x.abs()
                         + world.objects[id - world.get_id_offset()].velocity.y.abs())
-                    .floor() as i64
+                    .floor() as i64,
                 ),
             );
 
@@ -208,8 +360,10 @@ fn main() {
                 &mut buffer,
                 (20, HEIGHT - 25),
                 &format!(
-                    "   mass: {:e} kg",
-                    world.objects[id - world.get_id_offset()].mass
+                    "   mass: {:.4e} kg {},{}",
+                    world.objects[id - world.get_id_offset()].mass,
+                    world.objects[id - world.get_id_offset()].position.x.round(),
+                    world.objects[id - world.get_id_offset()].position.y.round()
                 ),
             );
         }
@@ -224,11 +378,28 @@ fn main() {
                 ),
             );
         } else {
-            press_esc_text.draw(
-                &mut buffer,
-                (0, 5),
-                &format!("100px = {}km", 100. * (1.496e8 / factor as f64).round()),
-            );
+            let hundredpx = (1.496e8 / factor as f64).round();
+            if hundredpx > 1e12 {
+                press_esc_text.draw(
+                    &mut buffer,
+                    (0, 5),
+                    &format!(
+                        "100px = {}ly Speedup: {}x",
+                        (hundredpx / (9.461e12)) ,
+                        speed_factor
+                    ),
+                );
+            } else {
+                press_esc_text.draw(
+                    &mut buffer,
+                    (0, 5),
+                    &format!(
+                        "100px = {}km Speedup: {}x",
+                        100. * hundredpx,
+                        speed_factor
+                    ),
+                );
+            }
         }
 
         if running {
@@ -250,12 +421,104 @@ fn main() {
                 0x60606060,
             );
 
-            world.update();
+            world.update(speed_factor);
         }
 
         window
             .update_with_buffer(&buffer, new_size.0, new_size.1)
             .unwrap();
+    }
+}
+
+fn draw_ahead(
+    buffer: &mut [u32; 786432],
+    steps: usize,
+    clairvoyant: bool,
+    world: &World,
+    factor: f64,
+    center: (f64, f64),
+    speed_factor: f64,
+    new_planet: PointWeight,
+) {
+    let future_steps = world.simulate_ahead(new_planet, steps, clairvoyant, speed_factor);
+    // map the future steps to screencoords and draw a line between them
+    if future_steps.len() < 2 {
+        return;
+    }
+
+    let (mut x1, mut y1) = (
+        (new_planet.position * (AU / factor)).x + CENTER.x + center.0,
+        (new_planet.position * (AU / factor)).y + CENTER.y + center.1,
+    );
+
+    for i in 0..future_steps.len() - 1 {
+        let (x2, y2) = (
+            (future_steps[i].x.floor() / (AU / factor)) + CENTER.x + center.0,
+            (future_steps[i].y.floor() / (AU / factor)) + CENTER.y + center.1,
+        );
+
+        if x1 > WIDTH as f64 || y1 > HEIGHT as f64 || x1 < 0. || y1 < 0. {
+            (x1, y1) = (x2, y2);
+            continue;
+        }
+
+        dda_line(buffer.as_mut(), x1, y1, x2, y2, new_planet.color);
+        (x1, y1) = (x2, y2);
+    }
+}
+
+fn just_draw_ahead(
+    buffer: &mut [u32; 786432],
+    future_steps: Vec<DVec2>,
+    world: &World,
+    factor: f64,
+    center: (f64, f64),
+    color: u32,
+) {
+    if future_steps.len() == 0 {
+        return;
+    }
+
+    for i in 0..future_steps.len() - 1 {
+        let (x1, y1) = (
+            (future_steps[i].x.floor() / (AU / factor)) + CENTER.x + center.0,
+            (future_steps[i].y.floor() / (AU / factor)) + CENTER.y + center.1,
+        );
+
+        if x1 > WIDTH as f64 || y1 > HEIGHT as f64 || x1 < 0. || y1 < 0. {
+            continue;
+        }
+
+        let (x2, y2) = (
+            (future_steps[i + 1].x.floor() / (AU / factor)) + CENTER.x + center.0,
+            (future_steps[i + 1].y.floor() / (AU / factor)) + CENTER.y + center.1,
+        );
+
+        dda_line(buffer.as_mut(), x1, y1, x2, y2, color);
+    }
+}
+
+fn get_mass_factor(window: &Window, mass_factor: &mut f64) {
+    if window.is_key_down(Key::Key9) {
+        *mass_factor = 100.;
+    } else if window.is_key_down(Key::Key8) {
+        *mass_factor = 64.;
+    } else if window.is_key_down(Key::Key7) {
+        *mass_factor = 48.;
+    } else if window.is_key_down(Key::Key6) {
+        *mass_factor = 32.;
+    } else if window.is_key_down(Key::Key5) {
+        *mass_factor = 16.;
+    } else if window.is_key_down(Key::Key4) {
+        *mass_factor = 8.;
+    } else if window.is_key_down(Key::Key3) {
+        *mass_factor = 4.;
+    } else if window.is_key_down(Key::Key2) {
+        *mass_factor = 2.;
+    } else if window.is_key_down(Key::Key1) {
+        *mass_factor = 1.;
+    } else if window.is_key_down(Key::B) {
+        *mass_factor = -1.; // blackhole
     }
 }
 
