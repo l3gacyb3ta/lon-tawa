@@ -155,11 +155,17 @@ fn main() {
         } else if window.is_key_pressed(Key::Down, minifb::KeyRepeat::Yes) && running {
             center.1 -= 10.;
         } else if window.is_key_pressed(Key::Equal, minifb::KeyRepeat::No) {
+            // get the center in worldspace:
+            let worldspace_center = DVec2::from(center) * (AU / factor);
             factor *= 10.;
-            // factor = factor.round();
+            // update the center to keep the same worldspace position
+            center = (worldspace_center / (AU / factor)).into();
         } else if window.is_key_pressed(Key::Minus, minifb::KeyRepeat::No) {
+            // get the center in worldspace:
+            let worldspace_center = DVec2::from(center) * (AU / factor);
             factor *= 0.1;
-            // factor = factor.round();
+            // update the center to keep the same worldspace position
+            center = (worldspace_center / (AU / factor)).into();
         } else if window.is_key_pressed(Key::Delete, minifb::KeyRepeat::No) && running {
             world.objects.clear();
             focused_object = None;

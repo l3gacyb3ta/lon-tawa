@@ -17,6 +17,14 @@ pub struct World {
     pub particles: Vec<Particle>,
 }
 
+const C: f64 = 1.07925285e9;
+
+#[inline]
+fn lorentz_factor(velocity: f64) -> f64 {
+    // println!("v{}", velocity);
+    ((1. - (velocity.powi(2) / C.powi(2))).sqrt()).recip()
+}
+
 impl World {
     pub fn get_id_offset(&self) -> usize {
         return get_current_id() - self.objects.len();
@@ -177,7 +185,13 @@ impl World {
             }
 
             particle.force = net_force;
-            particle.velocity += (particle.force / particle.mass) * time_factor;
+            let lorentz = lorentz_factor(particle.velocity.length());
+            particle.velocity += ((particle.force / particle.mass) * time_factor) / lorentz;
+
+            // Ensure the particle's velocity does not exceed the speed of light
+            if particle.velocity.length() > C {
+                particle.velocity = particle.velocity.normalize() * C;
+            }
         }
 
         for particle in self.particles.iter_mut() {
@@ -409,9 +423,16 @@ impl Particle {
         const G: f64 = 6.67e-11; // Gravitational Constant
                                  // Distance is at least 10e8 m, because otherwise...
         let dist = self.position.distance(other.position);
-
-        (G * self.mass * other.mass) / dist.powi(2) // The equation for gravity!
+        // let lorentz_factor_self = lorentz_factor(magnitude(self.velocity));
+        // if (magnitude(self.velocity) / C) > 1. {
+        //     println!("{:.3} {:.2}: {:.2}",magnitude(self.velocity) / C,  lorentz_factor_self, magnitude(self.velocity));
+        // }
+        (G * (self.mass * other.mass)) / dist.powi(2) // The equation for gravity!
     }
+}
+
+fn magnitude(vec: DVec2) -> f64 {
+    (vec.x.powi(2) + vec.y.powi(2)).sqrt()
 }
 
 use std::sync::atomic::AtomicUsize;
