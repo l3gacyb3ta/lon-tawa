@@ -330,11 +330,7 @@ impl Drawable for World {
                 }
             }
         }
-
-        self.objects.clone().into_iter().for_each(|obj| {
-            obj.draw(buffer, zoom, 0., center);
-        });
-
+        
         self.particles.iter().for_each(|particle| {
             let x = (particle.position.x.floor() / au_factor) + CENTER.x + center.0;
             let y = (particle.position.y.floor() / au_factor) + CENTER.y + center.1;
@@ -345,6 +341,11 @@ impl Drawable for World {
 
             plot_arc(buffer, x, y, 1., 0xa0a0a0a0, true, false, true, false);
         });
+
+        self.objects.clone().into_iter().for_each(|obj| {
+            obj.draw(buffer, zoom, 0., center);
+        });
+
 
         if vectors % 3. == 0. {
             self.objects.clone().into_iter().for_each(|obj| {

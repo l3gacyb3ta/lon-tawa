@@ -1,5 +1,6 @@
 mod gravity;
 mod helper;
+mod save;
 mod ui;
 
 use crate::helper::{HEIGHT, WIDTH};
@@ -11,6 +12,7 @@ use ui::dda_line;
 const AU: f64 = 1.496e+8;
 const EARTH_MASS: f64 = 5.972e+24;
 const CENTER: DVec2 = dvec2((WIDTH as f64) / 2., HEIGHT as f64 / 2.);
+const TARGET_FPS: usize = 120;
 
 #[inline(always)]
 fn blit(buffer: &mut [u32; WIDTH * HEIGHT]) {
@@ -107,7 +109,7 @@ fn main() {
     )
     .expect("Unable to create the window");
 
-    window.set_target_fps(120);
+    window.set_target_fps(TARGET_FPS);
     let press_esc_text = Text::new(WIDTH, HEIGHT, 2);
 
     let ui = ui::UserInterface::new();
@@ -121,9 +123,15 @@ fn main() {
     let mut focused_object: Option<usize> = None;
     let mut showing_vectors = false;
     let mut see_the_future = true;
+    let mut turbo_mode = false;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        let speed_factor = (100. / factor).clamp(0.00001, 10.);
+        let speed_factor = if turbo_mode {
+            // 1000.0  // Much faster in turbo mode
+            (100. / factor).clamp(0.001, 100.)
+        } else {
+            (100. / factor).clamp(0.00001, 10.)
+        };
 
         let new_size = window.get_size();
 
@@ -146,6 +154,13 @@ fn main() {
             showing_field = !showing_field;
         } else if window.is_key_pressed(Key::F, minifb::KeyRepeat::No) {
             see_the_future = !see_the_future;
+        } else if window.is_key_pressed(Key::T, minifb::KeyRepeat::No) {
+            turbo_mode = !turbo_mode;
+            if turbo_mode {
+                window.set_target_fps(0);
+            } else {
+                window.set_target_fps(TARGET_FPS);
+            }
         } else if window.is_key_pressed(Key::Left, minifb::KeyRepeat::Yes) && running {
             center.0 += 10.;
         } else if window.is_key_pressed(Key::Right, minifb::KeyRepeat::Yes) && running {
@@ -169,6 +184,15 @@ fn main() {
         } else if window.is_key_pressed(Key::Delete, minifb::KeyRepeat::No) && running {
             world.objects.clear();
             focused_object = None;
+        } else if window.is_key_pressed(Key::S, minifb::KeyRepeat::No) {
+            // Save only the objects (not particles)
+            let mut center_world = DVec2::from(center) * (AU / factor);
+            save::save_state(&world.objects, "./state.space", center_world, factor);
+        } else if window.is_key_pressed(Key::L, minifb::KeyRepeat::No) {
+            // Load objects from file and replace current objects
+            let new_center: DVec2;
+            (world.objects, new_center, factor) = save::load_state("./state.space");
+            center = (new_center / (AU / factor)).into();
         }
 
         let mouse = window.get_mouse_pos(MouseMode::Discard);
@@ -311,7 +335,8 @@ fn main() {
         }
 
         if see_the_future {
-            let futures = world.simulate_ahead_all(10000, speed_factor);
+            let futures =
+                world.simulate_ahead_all(if !turbo_mode { 10000 } else { 1000 }, speed_factor);
             let mut i = 0;
             for future_steps in futures {
                 just_draw_ahead(
@@ -340,7 +365,7 @@ fn main() {
             if !see_the_future {
                 draw_ahead(
                     &mut buffer,
-                    5000,
+                    if !turbo_mode { 5000 } else { 1000 },
                     true,
                     &world,
                     factor,
@@ -374,37 +399,42 @@ fn main() {
             );
         }
 
-        if factor.round() == 100. {
-            press_esc_text.draw(
-                &mut buffer,
-                (0, 5),
-                &format!(
-                    "100px = {}km *AU*",
-                    100. * (1.496e8 / factor as f64).round()
-                ),
-            );
-        } else {
-            let hundredpx = (1.496e8 / factor as f64).round();
-            if hundredpx > 1e12 {
+        if !turbo_mode {
+            if factor.round() == 100. {
                 press_esc_text.draw(
                     &mut buffer,
                     (0, 5),
                     &format!(
-                        "100px = {}ly Speedup: {}x",
-                        (hundredpx / (9.461e12)) ,
-                        speed_factor
+                        "100px = {}km *AU* {}",
+                        100. * (1.496e8 / factor as f64).round(),
+                        if turbo_mode { "TURBO" } else { "" }
                     ),
                 );
             } else {
-                press_esc_text.draw(
-                    &mut buffer,
-                    (0, 5),
-                    &format!(
-                        "100px = {}km Speedup: {}x",
-                        100. * hundredpx,
-                        speed_factor
-                    ),
-                );
+                let hundredpx = (1.496e8 / factor as f64).round();
+                if hundredpx > 1e12 {
+                    press_esc_text.draw(
+                        &mut buffer,
+                        (0, 5),
+                        &format!(
+                            "100px = {}ly Speedup: {}x {}",
+                            (hundredpx / (9.461e12)),
+                            speed_factor,
+                            if turbo_mode { "TURBO" } else { "" }
+                        ),
+                    );
+                } else {
+                    press_esc_text.draw(
+                        &mut buffer,
+                        (0, 5),
+                        &format!(
+                            "100px = {}km Speedup: {}x {}",
+                            100. * hundredpx,
+                            speed_factor,
+                            if turbo_mode { "TURBO" } else { "" }
+                        ),
+                    );
+                }
             }
         }
 
