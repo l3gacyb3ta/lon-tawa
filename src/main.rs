@@ -128,7 +128,7 @@ fn main() {
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let speed_factor = if turbo_mode {
             // 1000.0  // Much faster in turbo mode
-            (100. / factor).clamp(0.001, 100.)
+            (100. / factor).clamp(0.001, 50.)
         } else {
             (100. / factor).clamp(0.00001, 10.)
         };
@@ -181,15 +181,18 @@ fn main() {
             factor *= 0.1;
             // update the center to keep the same worldspace position
             center = (worldspace_center / (AU / factor)).into();
+        } else if window.is_key_pressed(Key::Delete, minifb::KeyRepeat::No) && window.is_key_down(Key::LeftShift) && running {
+            world.particles.clear();
         } else if window.is_key_pressed(Key::Delete, minifb::KeyRepeat::No) && running {
             world.objects.clear();
+            world.particles.clear();
             focused_object = None;
         } else if window.is_key_pressed(Key::S, minifb::KeyRepeat::No) {
             // Save only the objects (not particles)
-            let mut center_world = DVec2::from(center) * (AU / factor);
-            save::save_state(&world.objects, "./state.space", center_world, factor);
+            save::save_state(&world.objects, "./state.space", DVec2::from(center) * (AU / factor), factor);
         } else if window.is_key_pressed(Key::L, minifb::KeyRepeat::No) {
             // Load objects from file and replace current objects
+            focused_object = None;
             let new_center: DVec2;
             (world.objects, new_center, factor) = save::load_state("./state.space");
             center = (new_center / (AU / factor)).into();
